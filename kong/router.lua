@@ -1186,34 +1186,10 @@ function _M.new(routes)
 
           if matched_route then
             local upstream_host
-            local upstream_uri
             local upstream_url_t = matched_route.upstream_url_t
             local matches        = ctx.matches
 
-            -- Path construction
-
             if matched_route.type == "http" then
-              -- if we do not have a path-match, then the postfix is simply the
-              -- incoming path, without the initial slash
-              local request_postfix = matches.uri_postfix or sub(req_uri, 2, -1)
-              local upstream_base = upstream_url_t.path or "/"
-
-              if matched_route.strip_uri then
-                -- we drop the matched part, replacing it with the upstream path
-                if sub(upstream_base, -1, -1) == "/" and
-                   sub(request_postfix, 1, 1) == "/" then
-                  -- double "/", so drop the first
-                  upstream_uri = sub(upstream_base, 1, -2) .. request_postfix
-
-                else
-                  upstream_uri = upstream_base .. request_postfix
-                end
-
-              else
-                -- we retain the incoming path, just prefix it with the upstream
-                -- path, but skip the initial slash
-                upstream_uri = upstream_base .. sub(req_uri, 2, -1)
-              end
 
               -- preserve_host header logic
 
@@ -1228,8 +1204,8 @@ function _M.new(routes)
               headers         = matched_route.headers,
               upstream_url_t  = upstream_url_t,
               upstream_scheme = upstream_url_t.scheme,
-              upstream_uri    = upstream_uri,
               upstream_host   = upstream_host,
+              upstream_uri_postfix = matches.uri_postfix,
               matches         = {
                 uri_captures  = matches.uri_captures,
                 uri           = matches.uri,
@@ -1242,7 +1218,6 @@ function _M.new(routes)
                 sni           = matches.sni,
               }
             }
-
             cache:set(cache_key, match_t)
 
             return match_t
