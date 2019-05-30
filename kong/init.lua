@@ -141,13 +141,14 @@ do
 end
 
 
-local function execute_plugins_iterator(plugins_iterator, ctx, phase)
-  for plugin, configuration in plugins_iterator:iterate(ctx, phase) do
-    kong_global.set_named_ctx(kong, "plugin", configuration)
+local function execute_plugins_iterator(plugins_iterator, phase, ctx)
+  for plugin, configuration in plugins_iterator:iterate(phase, ctx) do
+    if ctx then
+      kong_global.set_named_ctx(kong, "plugin", configuration)
+    end
+
     kong_global.set_namespaced_log(kong, plugin.name)
-
     plugin.handler[phase](plugin.handler, configuration)
-
     kong_global.reset_log(kong)
   end
 end
@@ -331,7 +332,7 @@ function Kong.init()
   do
     local origins = {}
 
-    for i, v in ipairs(config.origins) do
+    for _, v in ipairs(config.origins) do
       -- Validated in conf_loader
       local from_scheme, from_authority, to_scheme, to_authority =
         v:match("^(%a[%w+.-]*)://([^=]+:[%d]+)=(%a[%w+.-]*)://(.+)$")
@@ -498,23 +499,20 @@ function Kong.init_worker()
   end
 
   local plugins_iterator = runloop.get_plugins_iterator()
-  local mock_ctx = {} -- ctx is not available in init_worker, use table instead
-  for plugin, _ in plugins_iterator:iterate(mock_ctx, "init_worker") do
-    kong_global.set_namespaced_log(kong, plugin.name)
-    plugin.handler:init_worker()
-    kong_global.reset_log(kong)
-  end
+  execute_plugins_iterator(plugins_iterator, "init_worker")
 end
 
 function Kong.ssl_certificate()
   kong_global.set_phase(kong, PHASES.certificate)
 
-  local mock_ctx = {} -- ctx is not available in cert phase, use table instead
+  -- this doesn't really work across the phases currently (OpenResty 1.13.6.2),
+  -- but it returns a table (rewrite phase clears it)
+  local ctx = ngx.ctx
 
-  runloop.certificate.before(mock_ctx)
+  runloop.certificate.before(ctx)
 
   local plugins_iterator = runloop.get_updated_plugins_iterator()
-  execute_plugins_iterator(plugins_iterator, mock_ctx, "certificate")
+  execute_plugins_iterator(plugins_iterator, "certificate", ctx)
 end
 
 function Kong.balancer()
@@ -629,7 +627,7 @@ function Kong.rewrite()
     plugins_iterator = runloop.get_updated_plugins_iterator()
   end
 
-  execute_plugins_iterator(plugins_iterator, ctx, "rewrite")
+  execute_plugins_iterator(plugins_iterator, "rewrite", ctx)
 
   runloop.rewrite.after(ctx)
 end
@@ -642,7 +640,7 @@ function Kong.preread()
   runloop.preread.before(ctx)
 
   local plugins_iterator = runloop.get_updated_plugins_iterator()
-  execute_plugins_iterator(plugins_iterator, ctx, "preread")
+  execute_plugins_iterator(plugins_iterator, "preread", ctx)
 
   runloop.preread.after(ctx)
 end
@@ -657,7 +655,7 @@ function Kong.access()
   ctx.delay_response = true
 
   local plugins_iterator = runloop.get_plugins_iterator()
-  for plugin, plugin_conf in plugins_iterator:iterate(ctx, "access") do
+  for plugin, plugin_conf in plugins_iterator:iterate("access", ctx) do
     if not ctx.delayed_response then
       kong_global.set_named_ctx(kong, "plugin", plugin_conf)
       kong_global.set_namespaced_log(kong, plugin.name)
@@ -691,7 +689,7 @@ function Kong.header_filter()
   runloop.header_filter.before(ctx)
 
   local plugins_iterator = runloop.get_plugins_iterator()
-  execute_plugins_iterator(plugins_iterator, ctx, "header_filter")
+  execute_plugins_iterator(plugins_iterator, "header_filter", ctx)
 
   runloop.header_filter.after(ctx)
 end
@@ -702,8 +700,7 @@ function Kong.body_filter()
   local ctx = ngx.ctx
 
   local plugins_iterator = runloop.get_plugins_iterator()
-  execute_plugins_iterator(plugins_iterator, ctx, "body_filter")
-
+  execute_plugins_iterator(plugins_iterator, "body_filter", ctx)
   runloop.body_filter.after(ctx)
 end
 
@@ -713,7 +710,7 @@ function Kong.log()
   local ctx = ngx.ctx
 
   local plugins_iterator = runloop.get_plugins_iterator()
-  execute_plugins_iterator(plugins_iterator, ctx, "log")
+  execute_plugins_iterator(plugins_iterator, "log", ctx)
 
   runloop.log.after(ctx)
 end
@@ -726,9 +723,8 @@ function Kong.handle_error()
   ctx.KONG_UNEXPECTED = true
 
   if not ctx.plugins then
-
     local plugins_iterator = runloop.get_updated_plugins_iterator()
-    for _ in plugins_iterator:iterate(ctx, "content") do
+    for _ in plugins_iterator:iterate("content", ctx) do
       -- just build list of plugins
     end
   end
