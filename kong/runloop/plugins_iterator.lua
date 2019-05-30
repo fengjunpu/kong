@@ -222,6 +222,14 @@ local function get_next(self)
 
   self.i = i
 
+  if not self.ctx then
+    if self.phases[plugin.name] then
+      return plugin
+    end
+
+    return get_next(self)
+  end
+
   if not self.map[plugin.name] then
     return get_next(self)
   end
@@ -323,11 +331,10 @@ function PluginsIterator.new(version)
     end
   end
 
-  local phase_handler
   for _, plugin in ipairs(loaded_plugins) do
-    if combos[plugin.name] then
-      for phase_name, phase in pairs(phases) do
-        phase_handler = plugin.handler[phase_name]
+    for phase_name, phase in pairs(phases) do
+      if phase_name == "init_worker" or combos[plugin.name] then
+        local phase_handler = plugin.handler[phase_name]
         if type(phase_handler) == "function"
         and phase_handler ~= BasePlugin[phase_name] then
           phase[plugin.name] = true
