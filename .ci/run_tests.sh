@@ -23,7 +23,7 @@ if [ "$TEST_SUITE" == "dbless" ]; then
                      spec/02-integration/04-admin_api/15-off_spec.lua
 fi
 if [ "$TEST_SUITE" == "plugins" ]; then
-    eval "$TEST_CMD" spec/03-plugins/
+    eval "$TEST_CMD" spec/03-plugins/03-http-log
 fi
 if [ "$TEST_SUITE" == "pdk" ]; then
     TEST_NGINX_RANDOMIZE=1 prove -I. -j$JOBS -r t/01-pdk
